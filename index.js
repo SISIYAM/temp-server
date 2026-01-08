@@ -1,21 +1,48 @@
-require("dotenv").config();
-const express = require("express");
-const connectDB = require("./config/db");
-const User = require("./models/User");
-const Leaderboard = require("./models/Leaderboard");
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const connectDB = require('./config/db');
+const User = require('./models/User');
+const Leaderboard = require('./models/Leaderboard');
+const { GoogleGenAI } = require('@google/genai');
+const OpenAI = require('openai');
 
 const app = express();
 
+// Initialize Google Gen AI
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// Initialize OpenAI
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// System prompt for AI
+const SYSTEM_PROMPT = `
+  System Prompt: "You are an educational assistant for Chorcha, a specialized self-practice platform for AS, O, and A-Level students. Your goal is to foster independent mastery of Cambridge and Edexcel curricula.
+
+Guidelines:
+
+Scaffolded Learning: When a user asks a question, don't just provide the final answer. Break down the logic or provide a hint first to encourage self-correction.
+
+Syllabus Precision: Align all explanations with AS/O/A-Level marking schemes. Use specific terminology (e.g., 'enthalpy change' instead of 'heat difference').
+
+Step-by-Step Clarity: Use Markdown (bolding, bullet points) and LaTeX for all mathematical or scientific formulas to ensure readability.
+
+Tone: Encouraging, intellectually honest, and professional.
+
+Correction: If a student makes a conceptual error, gently explain why it is incorrect before providing the right path."
+  `;
+
 // Middleware
+app.use(cors());
 app.use(express.json());
 
 connectDB();
 
-app.get("/", (req, res) => {
-  res.send("API running 🚀");
+app.get('/', (req, res) => {
+  res.send('API running 🚀');
 });
 
-app.post("/users", async (req, res) => {
+app.post('/users', async (req, res) => {
   try {
     const { name, email, age } = req.body;
 
@@ -26,19 +53,19 @@ app.post("/users", async (req, res) => {
     });
 
     res.status(201).json({
-      message: "User created successfully",
+      message: 'User created successfully',
       user,
     });
   } catch (error) {
     res.status(400).json({
-      message: "Error creating user",
+      message: 'Error creating user',
       error: error.message,
     });
   }
 });
 
 // route for insert/update leaderboard
-app.post("/leaderboard", async (req, res) => {
+app.post('/leaderboard', async (req, res) => {
   try {
     const { userId, userName, userImage, score } = req.body;
 
@@ -69,21 +96,21 @@ app.post("/leaderboard", async (req, res) => {
 
     res.status(200).json({
       message: existingEntry
-        ? "Leaderboard updated successfully"
-        : "Leaderboard entry created successfully",
+        ? 'Leaderboard updated successfully'
+        : 'Leaderboard entry created successfully',
       leaderboard: leaderboardEntry,
     });
   } catch (error) {
     console.log(error);
     res.status(400).json({
-      message: "Error updating leaderboard",
+      message: 'Error updating leaderboard',
       error: error.message,
     });
   }
 });
 
 // fetch leaderboard sorted by highScore (rank 1 first)
-app.get("/leaderboard", async (req, res) => {
+app.get('/leaderboard', async (req, res) => {
   try {
     const leaderboard = await Leaderboard.find().sort({ highScore: -1 }).lean();
 
@@ -94,25 +121,97 @@ app.get("/leaderboard", async (req, res) => {
     }));
 
     res.status(200).json({
-      message: "Leaderboard fetched successfully",
+      message: 'Leaderboard fetched successfully',
       leaderboard: rankedLeaderboard,
     });
   } catch (error) {
     console.log(error);
     res.status(500).json({
-      message: "Error fetching leaderboard",
+      message: 'Error fetching leaderboard',
       error: error.message,
     });
   }
 });
 
-app.get("/users", async (req, res) => {
+// AI Chat route with conversation history support
+app.post('/chat', async (req, res) => {
+  try {
+    const { message, history } = req.body;
+
+    if (!message) {
+      return res.status(400).json({
+        message: 'Message is required',
+      });
+    }
+
+    // Build contents array with history and new message
+    const contents = [
+      { role: 'user', parts: [{ text: SYSTEM_PROMPT }] },
+      ...(history || []),
+      { role: 'user', parts: [{ text: message }] },
+    ];
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: contents,
+    });
+
+    res.status(200).json({
+      text: response.text,
+      role: 'model',
+    });
+  } catch (error) {
+    console.error('Gemini Error:', error);
+    res.status(500).json({
+      text: 'Sorry, I encountered an error.',
+      role: 'model',
+    });
+  }
+});
+
+// OpenAI Chat route with conversation history support
+app.post('/chat-openai', async (req, res) => {
+  try {
+    const { message, history } = req.body;
+
+    if (!message) {
+      return res.status(400).json({
+        message: 'Message is required',
+      });
+    }
+
+    // Build messages array with system prompt, history, and new message
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...(history || []),
+      { role: 'user', content: message },
+    ];
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: messages,
+    });
+
+    res.status(200).json({
+      text: completion.choices[0].message.content,
+      role: 'assistant',
+    });
+  } catch (error) {
+    console.error('OpenAI Error:', error);
+    res.status(500).json({
+      text: 'Sorry, I encountered an error.',
+      role: 'assistant',
+    });
+  }
+});
+
+app.get('/users', async (req, res) => {
   try {
     const users = await User.find();
     res.json(users);
   } catch (error) {
     res.status(500).json({
-      message: "Error fetching users ❌",
+      message: 'Error fetching users ❌',
       error: error.message,
     });
   }
