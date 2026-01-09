@@ -205,7 +205,7 @@ app.post('/chat-openai', async (req, res) => {
   }
 });
 
-// Sentence Analysis route
+// Sentence Analysis route - Enhanced for Grammar Learning
 app.post('/analyze-sentence', async (req, res) => {
   try {
     const { sentence } = req.body;
@@ -216,36 +216,30 @@ app.post('/analyze-sentence', async (req, res) => {
       });
     }
 
-    const ANALYSIS_PROMPT = `
-You are a grammar analysis tool. Analyze the given sentence and return ONLY a valid JSON object with the following structure. Do not include any markdown formatting, explanations, or additional text.
+    const ANALYSIS_PROMPT = `Analyze this sentence for AS/O/A-Level grammar learning. Return ONLY valid JSON, no markdown.
 
+Structure:
 {
-  "original": "the original sentence",
-  "sentenceType": "declarative|interrogative|imperative|exclamatory",
-  "structure": "simple|compound|complex|compound-complex",
-  "transformations": {
-    "simple": "simple sentence version or null if already simple",
-    "compound": "compound sentence version or null if not applicable",
-    "complex": "complex sentence version or null if already complex"
-  },
-  "adjectives": {
-    "positive": ["base form adjectives"],
-    "comparative": ["comparative form adjectives"],
-    "superlative": ["superlative form adjectives"]
-  },
-  "voice": "active|passive",
-  "voiceTransformation": "the sentence in opposite voice or null",
-  "tense": "present|past|future with aspect info",
-  "components": {
-    "subject": "main subject",
-    "predicate": "main predicate",
-    "clauses": ["list of clauses if applicable"]
-  }
+  "original": "input text",
+  "corrected": "fixed version or same",
+  "hasErrors": bool,
+  "basicInfo": {"sentenceType": "declarative|interrogative|imperative|exclamatory", "structure": "simple|compound|complex|compound-complex", "mood": "indicative|subjunctive|conditional|imperative", "voice": "active|passive", "tense": "full tense with aspect", "wordCount": num, "complexityScore": "beginner|intermediate|advanced"},
+  "transformations": {"simple": "str|null", "compound": "str|null", "complex": "str|null", "passive": "str|null", "active": "str|null", "negative": "str", "question": "str"},
+  "grammaticalComponents": {"subject": {"text": "str", "type": "str"}, "predicate": {"text": "str", "mainVerb": "str", "verbPhrase": "str"}, "object": "str|null", "complement": "str|null", "modifiers": ["arr"]},
+  "clauses": {"independent": ["arr"], "dependent": [{"text": "str", "type": "noun|adjective|adverb", "function": "str"}]},
+  "phrases": {"noun": ["arr"], "verb": ["arr"], "prepositional": ["arr"], "participial": ["arr"], "infinitive": ["arr"], "gerund": ["arr"]},
+  "wordsAnalysis": {"nouns": ["arr"], "verbs": ["arr"], "adjectives": {"positive": ["arr"], "comparative": ["arr"], "superlative": ["arr"]}, "adverbs": ["arr"], "pronouns": ["arr"], "prepositions": ["arr"], "conjunctions": {"coordinating": ["arr"], "subordinating": ["arr"], "correlative": ["arr"]}},
+  "punctuation": {"marks": ["arr"], "correctness": "correct|needs improvement", "suggestions": ["arr"]},
+  "errors": [{"type": "grammar|spelling|punctuation|structure", "issue": "str", "suggestion": "str"}],
+  "improvements": ["arr"],
+  "learningTips": ["arr"],
+  "keyGrammarConcepts": ["arr"],
+  "difficultyRating": {"score": "1-10", "reasoning": "str"}
 }
 
-Sentence to analyze: "${sentence}"
+Sentence: "${sentence}"
 
-Return ONLY the JSON object, no additional text.`;
+Be comprehensive, educational, accurate.`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -253,11 +247,12 @@ Return ONLY the JSON object, no additional text.`;
         {
           role: 'system',
           content:
-            'You are a grammar analysis API that returns only valid JSON.',
+            'You are an expert educational grammar analysis API for Cambridge AS/O/A-Level students. Return only valid JSON with comprehensive grammatical analysis.',
         },
         { role: 'user', content: ANALYSIS_PROMPT },
       ],
       response_format: { type: 'json_object' },
+      temperature: 0.3, // Lower temperature for more consistent, factual analysis
     });
 
     const analysis = JSON.parse(completion.choices[0].message.content);
