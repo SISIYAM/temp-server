@@ -1,10 +1,10 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 const leaderboardSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
     },
     userName: {
@@ -12,6 +12,9 @@ const leaderboardSchema = new mongoose.Schema(
       required: true,
     },
     userImage: {
+      type: String,
+    },
+    country: {
       type: String,
     },
     score: {
@@ -26,4 +29,4 @@ const leaderboardSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Leaderboard", leaderboardSchema);
+module.exports = mongoose.model('Leaderboard', leaderboardSchema);

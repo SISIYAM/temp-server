@@ -67,11 +67,12 @@ app.post('/users', async (req, res) => {
 // route for insert/update leaderboard
 app.post('/leaderboard', async (req, res) => {
   try {
-    const { userId, userName, userImage, score } = req.body;
+    const { userId, userName, userImage, country, score } = req.body;
 
     // first find if any user data exists with the given userId
     const existingEntry = await Leaderboard.findOne({ userId });
     let leaderboardEntry;
+    let message;
 
     if (!existingEntry) {
       // create new entry with score as highScore initially
@@ -80,24 +81,25 @@ app.post('/leaderboard', async (req, res) => {
         userName,
         userImage,
         score,
+        country,
         highScore: score,
       });
+      message = 'Leaderboard entry created successfully';
     } else {
-      // if exists, update the score
-      existingEntry.score = score;
-
-      // update highScore only if current score is greater than existing highScore
+      // if exists, update only if score is higher than highScore
       if (score > existingEntry.highScore) {
+        existingEntry.score = score;
         existingEntry.highScore = score;
+        leaderboardEntry = await existingEntry.save();
+        message = 'Leaderboard updated successfully';
+      } else {
+        leaderboardEntry = existingEntry;
+        message = 'Score not high enough to update leaderboard';
       }
-
-      leaderboardEntry = await existingEntry.save();
     }
 
     res.status(200).json({
-      message: existingEntry
-        ? 'Leaderboard updated successfully'
-        : 'Leaderboard entry created successfully',
+      message,
       leaderboard: leaderboardEntry,
     });
   } catch (error) {
@@ -128,6 +130,178 @@ app.get('/leaderboard', async (req, res) => {
     console.log(error);
     res.status(500).json({
       message: 'Error fetching leaderboard',
+      error: error.message,
+    });
+  }
+});
+
+// Get user's leaderboard data and top 10 rankings
+app.get('/leaderboard/user', async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        message: 'userId is required',
+      });
+    }
+
+    // Get user's own leaderboard data with populated user info
+    const userLeaderboard = await Leaderboard.findOne({ userId })
+      .populate('userId', 'name country')
+      .lean();
+
+    if (!userLeaderboard) {
+      return res.status(404).json({
+        message: 'User not found in leaderboard',
+      });
+    }
+
+    // Get top 10 leaderboard entries with user info
+    const topLeaderboard = await Leaderboard.find()
+      .sort({ highScore: -1 })
+      .limit(10)
+      .populate('userId', 'name country')
+      .lean();
+
+    // Add rank to top 10 entries
+    const rankedTopLeaderboard = topLeaderboard.map((entry, index) => ({
+      rank: index + 1,
+      userId: entry.userId._id,
+      userName: entry.userName,
+      userImage: entry.userImage,
+      country: entry.userId.country,
+      score: entry.score,
+      highScore: entry.highScore,
+    }));
+
+    // Find user's rank in the overall leaderboard
+    const allLeaderboard = await Leaderboard.find()
+      .sort({ highScore: -1 })
+      .lean();
+    const userRank =
+      allLeaderboard.findIndex((entry) => entry.userId.toString() === userId) +
+      1;
+
+    res.status(200).json({
+      message: 'User leaderboard data fetched successfully',
+      userData: {
+        userId: userLeaderboard.userId._id,
+        userName: userLeaderboard.userName,
+        userImage: userLeaderboard.userImage,
+        country: userLeaderboard.userId.country,
+        score: userLeaderboard.score,
+        highScore: userLeaderboard.highScore,
+        rank: userRank,
+      },
+      top10: rankedTopLeaderboard,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      message: 'Error fetching user leaderboard data',
+      error: error.message,
+    });
+  }
+});
+
+// TEMPORARY ROUTE: Delete all leaderboard data (for development/testing only)
+app.delete('/leaderboard', async (req, res) => {
+  try {
+    const result = await Leaderboard.deleteMany({});
+
+    res.status(200).json({
+      message: 'All leaderboard data deleted successfully',
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      message: 'Error deleting leaderboard data',
+      error: error.message,
+    });
+  }
+});
+
+// TEMPORARY ROUTE: Populate leaderboard with dummy data (for development/testing only)
+app.post('/leaderboard/populate', async (req, res) => {
+  try {
+    const countries = [
+      'USA',
+      'UK',
+      'Canada',
+      'Australia',
+      'Germany',
+      'France',
+      'Japan',
+      'India',
+      'Brazil',
+      'South Korea',
+    ];
+
+    const dummyUsers = [
+      { name: 'Alice Johnson', email: 'alice@example.com', age: 25 },
+      { name: 'Bob Smith', email: 'bob@example.com', age: 30 },
+      { name: 'Charlie Brown', email: 'charlie@example.com', age: 22 },
+      { name: 'Diana Prince', email: 'diana@example.com', age: 28 },
+      { name: 'Ethan Hunt', email: 'ethan@example.com', age: 35 },
+    ];
+
+    const createdUsers = [];
+    const leaderboardEntries = [];
+
+    for (let i = 0; i < dummyUsers.length; i++) {
+      const user = dummyUsers[i];
+      const randomCountry =
+        countries[Math.floor(Math.random() * countries.length)];
+      const randomScore = Math.floor(Math.random() * (250 - 150 + 1)) + 150;
+
+      // Create user with random country
+      const createdUser = await User.create({
+        ...user,
+        country: randomCountry,
+      });
+
+      // Create leaderboard entry
+      const leaderboardEntry = await Leaderboard.create({
+        userId: createdUser._id,
+        userName: user.name,
+        userImage: `https://example.com/images/${
+          user.name.toLowerCase().split(' ')[0]
+        }.jpg`,
+        score: randomScore,
+        highScore: randomScore,
+      });
+
+      createdUsers.push({
+        userId: createdUser._id,
+        name: user.name,
+        email: user.email,
+        country: randomCountry,
+      });
+
+      leaderboardEntries.push({
+        userId: leaderboardEntry.userId,
+        userName: leaderboardEntry.userName,
+        userImage: leaderboardEntry.userImage,
+        score: leaderboardEntry.score,
+        highScore: leaderboardEntry.highScore,
+      });
+    }
+
+    res.status(201).json({
+      message: 'Leaderboard populated with dummy data successfully',
+      usersCreated: createdUsers.length,
+      leaderboardEntries: leaderboardEntries.length,
+      data: {
+        users: createdUsers,
+        leaderboard: leaderboardEntries,
+      },
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      message: 'Error populating leaderboard with dummy data',
       error: error.message,
     });
   }
@@ -226,7 +400,7 @@ Structure:
   "basicInfo": {"sentenceType": "declarative|interrogative|imperative|exclamatory", "structure": "simple|compound|complex|compound-complex", "mood": "indicative|subjunctive|conditional|imperative", "voice": "active|passive", "tense": "full tense with aspect", "wordCount": num, "complexityScore": "beginner|intermediate|advanced"},
   "transformations": {"simple": "str|null", "compound": "str|null", "complex": "str|null", "passive": "str|null", "active": "str|null", "negative": "str", "question": "str"},
   "grammaticalComponents": {"subject": {"text": "str", "type": "str"}, "predicate": {"text": "str", "mainVerb": "str", "verbPhrase": "str"}, "object": "str|null", "complement": "str|null", "modifiers": ["arr"]},
-  "clauses": {"independent": ["arr"], "dependent": [{"text": "str", "type": "noun|adjective|adverb", "function": "str"}]},
+ "type": "noun|adjective|adverb", "function": "str"}]},
   "phrases": {"noun": ["arr"], "verb": ["arr"], "prepositional": ["arr"], "participial": ["arr"], "infinitive": ["arr"], "gerund": ["arr"]},
   "wordsAnalysis": {"nouns": ["arr"], "verbs": ["arr"], "adjectives": {"positive": ["arr"], "comparative": ["arr"], "superlative": ["arr"]}, "adverbs": ["arr"], "pronouns": ["arr"], "prepositions": ["arr"], "conjunctions": {"coordinating": ["arr"], "subordinating": ["arr"], "correlative": ["arr"]}},
   "punctuation": {"marks": ["arr"], "correctness": "correct|needs improvement", "suggestions": ["arr"]},
