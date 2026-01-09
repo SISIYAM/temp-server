@@ -205,6 +205,77 @@ app.post('/chat-openai', async (req, res) => {
   }
 });
 
+// Sentence Analysis route
+app.post('/analyze-sentence', async (req, res) => {
+  try {
+    const { sentence } = req.body;
+
+    if (!sentence) {
+      return res.status(400).json({
+        message: 'Sentence is required',
+      });
+    }
+
+    const ANALYSIS_PROMPT = `
+You are a grammar analysis tool. Analyze the given sentence and return ONLY a valid JSON object with the following structure. Do not include any markdown formatting, explanations, or additional text.
+
+{
+  "original": "the original sentence",
+  "sentenceType": "declarative|interrogative|imperative|exclamatory",
+  "structure": "simple|compound|complex|compound-complex",
+  "transformations": {
+    "simple": "simple sentence version or null if already simple",
+    "compound": "compound sentence version or null if not applicable",
+    "complex": "complex sentence version or null if already complex"
+  },
+  "adjectives": {
+    "positive": ["base form adjectives"],
+    "comparative": ["comparative form adjectives"],
+    "superlative": ["superlative form adjectives"]
+  },
+  "voice": "active|passive",
+  "voiceTransformation": "the sentence in opposite voice or null",
+  "tense": "present|past|future with aspect info",
+  "components": {
+    "subject": "main subject",
+    "predicate": "main predicate",
+    "clauses": ["list of clauses if applicable"]
+  }
+}
+
+Sentence to analyze: "${sentence}"
+
+Return ONLY the JSON object, no additional text.`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a grammar analysis API that returns only valid JSON.',
+        },
+        { role: 'user', content: ANALYSIS_PROMPT },
+      ],
+      response_format: { type: 'json_object' },
+    });
+
+    const analysis = JSON.parse(completion.choices[0].message.content);
+
+    res.status(200).json({
+      success: true,
+      analysis,
+    });
+  } catch (error) {
+    console.error('Sentence Analysis Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error analyzing sentence',
+      error: error.message,
+    });
+  }
+});
+
 app.get('/users', async (req, res) => {
   try {
     const users = await User.find();
